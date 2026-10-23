@@ -1,0 +1,51 @@
+# Stage B: ROI-based Swin-Temporal Transformer.
+# Values follow the Stage B training-configuration table and Section III-B of the paper.
+
+data:
+  benchmark: work/stage_b/benchmark.csv   # written by scripts/extract_stage_b_clips.py
+  clips: work/stage_b/clips
+  # paths are relative to the project root
+  num_frames: 16          # T, at the 10 FPS analysis rate, stride s = 1 (~1.6 s)
+  image_size: 224
+  num_workers: 6
+
+model:
+  backbone: swin_tiny_patch4_window7_224   # ImageNet-1K weights from timm
+  pretrained: true
+  dim: 768                # temporal hidden size, equal to the Swin-T output
+  depth: 2
+  heads: 8                # head dim 96
+  ffn_dim: 3072
+  dropout: 0.1            # attention weights and FFN activations
+  head_hidden: 384        # MLP 768 -> 384 -> 1
+  temporal_pool: mean     # mean | attn | cls | max
+  pos_encoding: learned   # learned (N(0, 0.02^2)) | sinusoidal
+
+# Phase 1: adapt Swin-T to ROI crops with a temporary head, then freeze it.
+adapt:
+  epochs: 5
+  lr: 1.0e-5
+  weight_decay: 0.01
+  batch_size: 8
+  grad_checkpointing: false  # peak ~8.7 GB at batch 8 x 16 frames; set true on smaller GPUs
+
+# Phase 2: temporal encoder and head on the frozen descriptors.
+train:
+  epochs: 50              # no early stopping; the last epoch is kept
+  lr: 1.0e-4
+  min_lr: 1.0e-6          # cosine annealing, T_max = epochs
+  weight_decay: 0.01
+  batch_size: 8
+  grad_clip: 1.0
+  amp: true
+  threshold: 0.5
+
+augment:
+  temporal_jitter: 0.05
+  hflip: 0.5
+  scale: [0.8, 1.0]
+  brightness: 0.2
+  contrast: 0.2
+
+seed: 42
+seeds: [42, 43, 44, 45, 46]

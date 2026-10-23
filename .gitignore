@@ -1,0 +1,30 @@
+# datasets, downloaded archives and transcoded copies
+data/
+
+# everything the pipeline writes
+work/
+models/
+runs/
+outputs/
+
+# trained weights and arrays, wherever they end up
+*.pt
+*.pth
+*.joblib
+*.npz
+*.npy
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+
+# videos (datasets and demo renders are not redistributed)
+*.mp4
+*.avi
+*.mpg
+*.mov
+*.mkv

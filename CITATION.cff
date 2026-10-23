@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper below and this software release."
+title: "Real-Time Violence Detection via Kinematic Multi-Stage Gating and ROI-Based Swin-Temporal Transformer: source code"
+type: software
+version: 1.0.0
+license: MIT
+authors:
+  - family-names: Ha
+    given-names: Nhu Thai
+    affiliation: Posts and Telecommunications Institute of Technology
+  - family-names: Pham
+    given-names: Tien Duc
+    affiliation: Posts and Telecommunications Institute of Technology
+  - family-names: Nguyen
+    given-names: Huy Trung
+    affiliation: Posts and Telecommunications Institute of Technology
+  - family-names: Nguyen
+    given-names: Manh Dung
+    affiliation: Posts and Telecommunications Institute of Technology
+keywords:
+  - violence detection
+  - video surveillance
+  - kinematic gating
+  - Swin Transformer
+preferred-citation:
+  type: article
+  title: "Real-Time Violence Detection via Kinematic Multi-Stage Gating and ROI-Based Swin-Temporal Transformer"
+  journal: "Scientific Reports"
+  notes: "Under review"
+  authors:
+    - family-names: Ha
+      given-names: Nhu Thai
+    - family-names: Pham
+      given-names: Tien Duc
+    - family-names: Nguyen
+      given-names: Huy Trung
+    - family-names: Nguyen
+      given-names: Manh Dung

@@ -1,0 +1,118 @@
+# Stage A (kinematic multi-stage gating) configuration.
+# Every constant below is taken from the paper; the section that states it is given
+# in the comment. Paths are relative to the project root.
+
+paths:
+  work_dir: work                # track caches, manifests, window tables
+  models_dir: models            # detector weights, trained gate, reports
+  transcode_dir: data/_transcoded  # H.264 copies of clips OpenCV decodes unreliably (DV)
+
+tools:
+  # external ffmpeg for transcoding DV clips (Movies V/N-V fights); null = PATH, then imageio-ffmpeg
+  ffmpeg: null
+
+# ---------------------------------------------------------------------------
+# Data sources (Sec. IV-A, Table "Experimental dataset distribution")
+# ---------------------------------------------------------------------------
+sources:
+  rwf2000: {root: data/rwf2000, enabled: true}
+  rlvs:    {root: data/rlvs, enabled: true}
+  hockey:  {root: data/hockey_fight, enabled: true}
+  movies:  {root: data/movies, enabled: true}
+  avd:     {root: data/A-Dataset-for-Automatic-Violence-Detection-in-Videos-master, enabled: true}
+  ptit:    {root: data/ptit, enabled: false}   # private; layout: <root>/{violent,non_violent}/**/*.mp4
+
+benchmark:
+  seed: 42
+  test_fraction: 0.2            # stratified 80/20 split at the clip level, grouped by source video
+  stageb_val_fraction: 0.2      # train partition split again 80/20 for Stage B (3,658 / 915)
+  dedupe: true                  # drop byte-identical files (Movies ships three duplicate pairs)
+  group_avd_cameras: true       # AVD cam1/N and cam2/N are one performance -> same split side
+  screened_sources: [rlvs, avd] # decode / usable-track / duration screening (Sec. IV-A)
+  balance_sources: [rlvs, avd]  # subsample the larger class to 1:1 (Sec. IV-A)
+  min_duration_s: 2.0
+  max_duration_s: 10.0
+  long_clip_policy: trim        # trim: keep the first max_duration_s; drop: remove the clip
+
+# ---------------------------------------------------------------------------
+# Front end (Sec. III-A-1, Table "Consolidated hyperparameters")
+# ---------------------------------------------------------------------------
+frontend:
+  resize_width: 640             # W_target
+  analysis_fps: 10              # kinematic analysis rate; nearest-frame resampling onto a 0.1 s grid
+  batch_size: 16                # detector batch (offline only; runtime uses 1)
+  max_seconds: 10.0             # offline tracking stops here (= max_duration_s)
+  detector:
+    weights: models/yolov8s.pt  # YOLOv8s, person class only
+    conf: 0.25
+    iou: 0.45
+    imgsz: 640
+    half: false                 # fp16 is unreliable on GPUs without tensor cores; enable on cards that have them
+  tracker:                      # DeepSORT
+    max_age: 30
+    n_init: 3
+    max_cosine_distance: 0.2
+    nn_budget: 100
+    max_iou_distance: 0.7
+    embedder: mobilenet
+    half: false
+
+# ---------------------------------------------------------------------------
+# Motion-energy map (Sec. III-A-3, Eq. energy_update)
+# ---------------------------------------------------------------------------
+energy:
+  intensity_threshold: 15       # I_threshold on the 8-bit grey scale
+  alpha: 1.0                    # accumulation step
+  decay_ratio: 0.1              # decay = 0.1 * alpha per static analysis frame
+  store_every: 5                # offline cache keeps E_t only where windows are evaluated (= stride)
+
+# ---------------------------------------------------------------------------
+# Grouping and window descriptor (Sec. III-A-1, III-A-4)
+# ---------------------------------------------------------------------------
+descriptor:
+  window: 10                    # N analysis frames (1 s)
+  stride: 5                     # descriptor + gates evaluated every 5th analysis frame (0.5 s)
+  grouping_k: 1.5               # T_adaptive = K * (H_i + H_j) / 2
+  min_members: 2                # a group is an interacting pair or cluster
+  min_history: 10               # a member counts once its track spans >= N analysis frames
+  roi_pad: 0.15                 # union box of members over the window, enlarged by 15%
+  use_predicted_boxes: true     # coasting DeepSORT tracks keep their Kalman box (keeps history through brief misses)
+  box_source: kalman            # kalman: the tracker's state box ("tracked boxes"); detection: raw YOLO box
+
+# ---------------------------------------------------------------------------
+# Gate (Sec. III-A-5)
+# ---------------------------------------------------------------------------
+gate:
+  physics:
+    a_max: 15.0                 # retain if A_max > 15 (body-lengths / s^2)
+    mu_heat: 2.0                # ... or mu_heat > 2.0
+
+svm:
+  # 500 pre-trimmed clips with continuous tracks (Table "Pre-trimmed labeled source clips").
+  # PTIT's 20 violent / 10 non-violent are skipped while sources.ptit is disabled.
+  quotas:
+    rwf2000: {violent: 60, non_violent: 70}
+    hockey:  {violent: 80, non_violent: 120}
+    movies:  {violent: 30, non_violent: 40}
+    avd:     {violent: 30, non_violent: 40}
+    ptit:    {violent: 20, non_violent: 10}
+  min_window_coverage: 0.8      # "continuous tracks": share of stride instants that yield a window
+  val_fraction: 0.2             # 400 / 100 clips, grouped by clip
+  cv_folds: 5                   # GroupKFold, group = clip
+  C_grid: [0.1, 1, 10, 100]
+  gamma_grid: [scale, auto, 0.01, 0.1, 1]
+  train_on: all                 # all: every window (physics filter disabled, as in the paper); physics: only gate-passing
+  target_recall: 0.773          # recall-first operating point on the validation clips
+  # svm: recall of the SVM alone over every validation window (Table "SVM pre-classifier performance",
+  # 1,688 windows, physics filter disabled as when D_SVM is built); gate: recall of physics AND svm
+  calibrate_on: svm
+
+# ---------------------------------------------------------------------------
+# ROI clip handed to Stage B (Sec. III-A-5, Algorithm 1)
+# ---------------------------------------------------------------------------
+roi_clip:
+  frames_before: 8              # analysis frames t-8 .. t+7  (T = 16)
+  frames_after: 7
+  size: 224
+  square: true                  # grow the shorter ROI side (letterbox at frame edges) before resizing: no aspect distortion
+  crop_from: original           # original: crop the source-resolution frame; analysis: the 640-px frame
